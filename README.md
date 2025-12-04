@@ -1,4 +1,4 @@
-# VoTrix-The-voting-app
+# VoTrix:-)The-voting.com
 A lightweight web-based voting system featuring leader/voter login, scheduled polls, anonymous voting, and auto-calculated results.
 
 # Votrix 🔥  
