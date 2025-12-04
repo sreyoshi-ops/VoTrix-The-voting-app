@@ -38,5 +38,4 @@ Votrix/
 - Email OTP login
 - Multi-team dashboards
 
-## 👑 Author
-Created by **You** ✨  
+
