@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Votrix</title>
+
+  <!-- CONNECTING THE CSS FILE -->
+  <link rel="stylesheet" href="votrix.css">
+
+   <link rel="stylesheet" href="votrix.js">
+  <title>votrix </title>
+  <style>
+    :root{--bg:#f6f8fb;--card:#ffffff;--accent:#2563eb;--muted:#6b7280}
+    *{box-sizing:border-box;font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    body{margin:0;background:var(--bg);color:#0f172a}
+    .container{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;justify-content:space-between;align-items:center}
+    h1{font-size:20px;margin:0}
+    .grid{display:grid;grid-template-columns:1fr 420px;gap:18px;margin-top:18px}
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+    form .row{display:flex;gap:8px}
+    label{font-size:13px;color:var(--muted)}
+    input,select,button,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #e6edf3;background:white}
+    .muted{color:var(--muted);font-size:13px}
+    button{cursor:pointer;border:none;background:var(--accent);color:white;padding:10px 12px;border-radius:8px}
+    .tabs{display:flex;gap:8px}
+    .tab{padding:8px 12px;border-radius:8px;background:transparent;border:1px solid transparent}
+    .tab.active{background:linear-gradient(90deg,#eef5ff,white);border-color:#e3f2ff}
+    .small{font-size:13px}
+    .teams-list{display:flex;flex-direction:column;gap:8px}
+    .team{padding:10px;border-radius:8px;border:1px dashed #e6edf3;display:flex;justify-content:space-between;align-items:center}
+    .stats{display:flex;gap:12px;align-items:center}
+    .pill{background:#eef2ff;padding:6px 10px;border-radius:999px;font-size:13px}
+    .notice{background:#fff7ed;border-left:4px solid #f59e0b;padding:10px;border-radius:8px}
+    footer{margin-top:18px;text-align:center;color:var(--muted);font-size:13px}
+    .center{display:flex;align-items:center;justify-content:center}
+    .countdown{font-weight:700}
+    .log{height:140px;overflow:auto;background:#0f172a;color:#f8fafc;padding:10px;border-radius:8px;font-family:monospace;font-size:13px}
+    @media(max-width:900px){.grid{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Voting System — Voter & Leader Dashboards</h1>
+      <div class="tabs">
+        <button class="tab active" id="tab-voter">Voter</button>
+        <button class="tab" id="tab-leader">Leader</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card" id="main-area">
+        <!-- main content (forms / dashboards) injected by JS -->
+      </div>
+
+      <div>
+        <div class="card">
+          <h3>System / Activity</h3>
+          <p class="muted">Simulated notifications & logs. (Static site cannot send real SMS.)</p>
+          <div id="log" class="log"></div>
+          <div style="margin-top:10px" class="center"><button id="clear-data">Clear all local data</button></div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <h3>Quick Notes</h3>
+          <ul class="muted small">
+            <li>Use the tabs to register/login as voter or leader.</li>
+            <li>Leaders create teams (their team name) and create a poll with start date/time.</li>
+            <li>When the poll starts, registered voters will be "notified" (simulated) and can vote anonymously.</li>
+            <li>Poll session max default: 12 hours (configurable while creating).</li>
+            <li>After poll ends, winner is announced and simulated SMS messages are shown in the activity log.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <footer>Built with HTML/CSS/JS — integrate a backend + SMS provider (Twilio, etc.) to send real messages.</footer>
+  </div>
+
+  <script>
+    // --- Simple client-side storage helpers ---
+    const DB = {
+      voters: JSON.parse(localStorage.getItem('voters')||'[]'),
+      leaders: JSON.parse(localStorage.getItem('leaders')||'[]'),
+      teams: JSON.parse(localStorage.getItem('teams')||'[]'),
+      polls: JSON.parse(localStorage.getItem('polls')||'[]'),
+      votes: JSON.parse(localStorage.getItem('votes')||'[]'),
+    }
+    function saveDB(){
+      localStorage.setItem('voters', JSON.stringify(DB.voters));
+      localStorage.setItem('leaders', JSON.stringify(DB.leaders));
+      localStorage.setItem('teams', JSON.stringify(DB.teams));
+      localStorage.setItem('polls', JSON.stringify(DB.polls));
+      localStorage.setItem('votes', JSON.stringify(DB.votes));
+    }
+
+    // DOM refs
+    const main = document.getElementById('main-area');
+    const logEl = document.getElementById('log');
+    const tabVoter = document.getElementById('tab-voter');
+    const tabLeader = document.getElementById('tab-leader');
+    const clearBtn = document.getElementById('clear-data');
+
+    function log(msg){
+      const time = new Date().toLocaleString();
+      logEl.innerHTML = `${time} - ${escapeHtml(msg)}\n` + logEl.innerHTML;
+    }
+
+    function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+    // Tab handlers
+    tabVoter.addEventListener('click',()=>{setActiveTab('voter'); renderVoterArea();});
+    tabLeader.addEventListener('click',()=>{setActiveTab('leader'); renderLeaderArea();});
+    function setActiveTab(name){
+      tabVoter.classList.toggle('active', name==='voter');
+      tabLeader.classList.toggle('active', name==='leader');
+    }
+
+    // Initial render
+    renderVoterArea();
+
+    // ---------- Voter UI ----------
+    function renderVoterArea(){
+      main.innerHTML = `
+        <h3>Voter — Register / Login</h3>
+        <div class="muted small">Register as a voter using name, age, phone (used to identify and to deliver SMS if backend is added).</div>
+        <form id="voter-form" style="margin-top:12px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label>Name</label>
+              <input id="voter-name" required />
+            </div>
+            <div>
+              <label>Age</label>
+              <input id="voter-age" type="number" required />
+            </div>
+          </div>
+          <div style="margin-top:8px">
+            <label>Phone (used as identifier)</label>
+            <input id="voter-phone" required placeholder="e.g. +919XXXXXXXXX" />
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button type="button" id="voter-register">Register</button>
+            <button type="button" id="voter-login">Login</button>
+          </div>
+        </form>
+
+        <div id="voter-dashboard" style="margin-top:12px"></div>
+      `;
+
+      document.getElementById('voter-register').addEventListener('click', ()=>{
+        const name = document.getElementById('voter-name').value.trim();
+        const age = document.getElementById('voter-age').value.trim();
+        const phone = document.getElementById('voter-phone').value.trim();
+        if(!name||!age||!phone){alert('Fill all fields');return}
+        if(DB.voters.find(v=>v.phone===phone)){alert('Phone already registered as voter');return}
+        DB.voters.push({name,age,phone,registeredAt:Date.now(),voted:false});saveDB();log(`Voter registered: ${name} (${phone})`);alert('Registered. You can login now.');
+      });
+
+      document.getElementById('voter-login').addEventListener('click', ()=>{
+        const phone = document.getElementById('voter-phone').value.trim();
+        const voter = DB.voters.find(v=>v.phone===phone);
+        if(!voter){alert('No such voter registered');return}
+        renderVoterDashboard(voter);
+      });
+    }
+
+    function renderVoterDashboard(voter){
+      const dash = document.getElementById('voter-dashboard');
+      dash.innerHTML = `
+        <div class="card">
+          <h4>Welcome, ${escapeHtml(voter.name)}</h4>
+          <div class="muted">Phone: ${escapeHtml(voter.phone)} — Registered: ${new Date(voter.registeredAt).toLocaleString()}</div>
+          <div style="margin-top:10px" id="voter-poll-area"></div>
+        </div>
+      `;
+      renderPollAreaForVoter(voter);
+    }
+
+    function renderPollAreaForVoter(voter){
+      const area = document.getElementById('voter-poll-area');
+      const activePoll = DB.polls.find(p=>p.status==='active');
+      if(!activePoll){
+        area.innerHTML = `<div class="muted">No active poll right now.</div>`;
+        return;
+      }
+      // show teams and voting form
+      if(voter.voted){
+        area.innerHTML = `<div class="muted">You have already voted in this poll. Only percentages are visible.</div>` + renderPollResultsQuick(activePoll);
+        return;
+      }
+
+      const teams = DB.teams.filter(t=>t.pollId===activePoll.id);
+      if(teams.length===0){ area.innerHTML = '<div class="muted">No teams found for this poll.</div>'; return; }
+
+      let html = `<div class="muted">Poll: ${escapeHtml(activePoll.title)} — ends: <span class="countdown" id="vcountdown"></span></div>`;
+      html += '<div style="margin-top:10px" class="teams-list">';
+      teams.forEach((t,idx)=>{
+        html += `<label class="team"><div><strong>${escapeHtml(t.name)}</strong><div class="muted">Leader: ${escapeHtml(t.leaderName)}</div></div><div><button data-team="${escapeHtml(t.name)}" data-idx="${idx}" class="vote-btn">Vote</button></div></label>`;
+      });
+      html += '</div>';
+      area.innerHTML = html;
+
+      // attach vote handlers
+      document.querySelectorAll('.vote-btn').forEach(b=>b.addEventListener('click',()=>{
+        const teamName = b.dataset.team;
+        // push anonymous vote
+        DB.votes.push({pollId: activePoll.id,team:teamName,at:Date.now()});
+        // mark voter as voted (we keep this as flag to prevent double voting)
+        const v = DB.voters.find(x=>x.phone===voter.phone); if(v) v.voted=true;
+        saveDB(); log(`Vote cast (anonymous) for ${teamName} by ${voter.phone}`);
+        alert('Thank you — your vote has been recorded (anonymous).');
+        renderVoterDashboard(v);
+      }));
+
+      // show countdown
+      startCountdown(activePoll.endsAt,document.getElementById('vcountdown'));
+      // show live results below
+      area.innerHTML += '<div style="margin-top:12px">' + renderPollResultsQuick(activePoll) + '</div>';
+    }
+
+    function renderPollResultsQuick(poll){
+      const total = DB.votes.filter(v=>v.pollId===poll.id).length;
+      const teams = DB.teams.filter(t=>t.pollId===poll.id);
+      let html = '<div style="margin-top:8px"><strong>Live results</strong><div class="muted">Only percentages shown — voters anonymous.</div>';
+      html += '<div style="margin-top:8px">';
+      teams.forEach(t=>{
+        const count = DB.votes.filter(v=>v.pollId===poll.id && v.team===t.name).length;
+        const pct = total===0?0:Math.round((count/total)*100);
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><div>${escapeHtml(t.name)}</div><div class="pill">${pct}% (${count})</div></div>`;
+      });
+      html += '</div></div>';
+      return html;
+    }
+
+    // ---------- Leader UI ----------
+    function renderLeaderArea(){
+      main.innerHTML = `
+        <h3>Leader — Register / Login</h3>
+        <div class="muted small">Leaders register their name, age, phone and team name. A leader can create a poll that includes all teams.</div>
+        <form id="leader-form" style="margin-top:12px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label>Name</label>
+              <input id="leader-name" required />
+            </div>
+            <div>
+              <label>Age</label>
+              <input id="leader-age" type="number" required />
+            </div>
+          </div>
+          <div style="margin-top:8px">
+            <label>Phone</label>
+            <input id="leader-phone" required placeholder="e.g. +919XXXXXXXXX" />
+          </div>
+          <div style="margin-top:8px">
+            <label>Team Name</label>
+            <input id="leader-team" required placeholder="Team name (unique)" />
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button type="button" id="leader-register">Register</button>
+            <button type="button" id="leader-login">Login</button>
+          </div>
+        </form>
+
+        <div id="leader-dashboard" style="margin-top:12px"></div>
+      `;
+
+      document.getElementById('leader-register').addEventListener('click', ()=>{
+        const name = document.getElementById('leader-name').value.trim();
+        const age = document.getElementById('leader-age').value.trim();
+        const phone = document.getElementById('leader-phone').value.trim();
+        const team = document.getElementById('leader-team').value.trim();
+        if(!name||!age||!phone||!team){alert('Fill all fields');return}
+        if(DB.leaders.find(l=>l.phone===phone || l.team===team)){alert('Phone or team name already registered');return}
+        DB.leaders.push({name,age,phone,team,registeredAt:Date.now()});
+        DB.teams.push({name:team,leaderName:name,pollId:null});
+        saveDB();log(`Leader registered: ${name} — Team: ${team}`);alert('Leader registered and team created.');
+      });
+
+      document.getElementById('leader-login').addEventListener('click', ()=>{
+        const phone = document.getElementById('leader-phone').value.trim();
+        const leader = DB.leaders.find(l=>l.phone===phone);
+        if(!leader){alert('No such leader registered');return}
+        renderLeaderDashboard(leader);
+      });
+    }
+
+    function renderLeaderDashboard(leader){
+      const dash = document.getElementById('leader-dashboard');
+      dash.innerHTML = `
+        <div class="card">
+          <h4>Welcome, ${escapeHtml(leader.name)}</h4>
+          <div class="muted">Your team: ${escapeHtml(leader.team)} — Phone: ${escapeHtml(leader.phone)}</div>
+
+          <hr style="margin:12px 0" />
+
+          <h5>Create Poll</h5>
+          <div class="muted small">Decide poll title, start date/time and duration (max 12 hours)</div>
+          <div style="margin-top:8px">
+            <label>Poll title</label>
+            <input id="poll-title" placeholder="e.g. Team Championship" />
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+            <div>
+              <label>Start (YYYY-MM-DD HH:MM)</label>
+              <input id="poll-start" placeholder="2025-12-04 15:30" />
+            </div>
+            <div>
+              <label>Duration hours (max 12)</label>
+              <input id="poll-duration" type="number" value="12" min="1" max="12" />
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px"><button id="create-poll">Create & Schedule Poll</button></div>
+
+          <div id="leader-active-area" style="margin-top:12px"></div>
+        </div>
+      `;
+
+      document.getElementById('create-poll').addEventListener('click', ()=>{
+        const title = document.getElementById('poll-title').value.trim();
+        const startStr = document.getElementById('poll-start').value.trim();
+        const duration = parseInt(document.getElementById('poll-duration').value,10);
+        if(!title||!startStr||!duration){alert('Fill all fields');return}
+        if(duration>12){alert('Duration cannot exceed 12 hours');return}
+        // parse start
+        const start = parseDateTimeLocal(startStr);
+        if(!start){alert('Invalid date format. Use YYYY-MM-DD HH:MM');return}
+        const startsAt = start.getTime();
+        const endsAt = startsAt + duration*60*60*1000;
+        const id = 'poll_' + Date.now();
+        const poll = {id,title,createdBy:leader.phone,startsAt,endsAt,status:'scheduled'};
+        DB.polls.push(poll);
+        // attach pollId to existing teams
+        DB.teams = DB.teams.map(t=>({...t,pollId:id}));
+        saveDB();
+        log(`Poll scheduled: ${title} by ${leader.name} — starts ${new Date(startsAt).toLocaleString()}`);
+        alert('Poll scheduled. When it starts, registered voters will be notified (simulated).');
+        renderLeaderDashboard(leader);
+      });
+
+      // show active or scheduled polls
+      const area = document.getElementById('leader-active-area');
+      const upcoming = DB.polls.sort((a,b)=>a.startsAt-b.startsAt);
+      if(upcoming.length===0){ area.innerHTML = '<div class="muted">No polls scheduled.</div>'; return; }
+      let html = '<div style="margin-top:8px">';
+      upcoming.forEach(p=>{
+        html += `<div style="padding:10px;border-radius:8px;border:1px solid #eef2ff;margin-bottom:8px"><div style="display:flex;justify-content:space-between"><div><strong>${escapeHtml(p.title)}</strong><div class="muted">Starts: ${new Date(p.startsAt).toLocaleString()} — Ends: ${new Date(p.endsAt).toLocaleString()}</div></div><div>${p.status==='active'?'<span class="pill">Active</span>':p.status}</div></div>`;
+        html += `<div style="margin-top:8px">Teams in this poll:</div>`;
+        const teams = DB.teams.filter(t=>t.pollId===p.id);
+        teams.forEach(t=>{
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0"><div>${escapeHtml(t.name)} <span class="muted">(Leader: ${escapeHtml(t.leaderName)})</span></div></div>`;
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+      area.innerHTML = html;
+    }
+
+    // ---------- Poll scheduler / state machine ----------
+    function checkPolls(){
+      const now = Date.now();
+      DB.polls.forEach(p=>{
+        if(p.status==='scheduled' && now>=p.startsAt){
+          p.status='active';
+          saveDB();
+          log(`Poll started: ${p.title}`);
+          // notify voters (simulation)
+          DB.voters.forEach(v=>{
+            log(`SMS-> ${v.phone}: Poll "${p.title}" is now live.`);
+          });
+        }
+        if(p.status==='active' && now>=p.endsAt){
+          p.status='finished';
+          saveDB();
+          log(`Poll ended: ${p.title}`);
+          finalizePoll(p);
+        }
+      });
+    }
+
+    function finalizePoll(poll){
+      // compute counts
+      const votes = DB.votes.filter(v=>v.pollId===poll.id);
+      const counts = {};
+      DB.teams.filter(t=>t.pollId===poll.id).forEach(t=>counts[t.name]=0);
+      votes.forEach(v=>{ if(counts[v.team]!==undefined) counts[v.team]++; });
+      // winner(s)
+      const max = Math.max(...Object.values(counts));
+      const winners = Object.keys(counts).filter(k=>counts[k]===max);
+      const winner = winners.length===1?winners[0]:winners.join(', ');
+      log(`Winner: ${winner} (${max} votes)`);
+      // simulate SMS: congratulate leader(s)
+      winners.forEach(wName=>{
+        const leader = DB.leaders.find(l=>l.team===wName);
+        if(leader) log(`SMS-> ${leader.phone}: Congratulations! Your team "${wName}" won the poll "${poll.title}".`);
+      });
+      // notify voters
+      DB.voters.forEach(v=>{
+        log(`SMS-> ${v.phone}: Poll "${poll.title}" finished. Winner: ${winner}`);
+      });
+    }
+
+    setInterval(checkPolls, 3000); // check every 3s
+    checkPolls();
+
+    // countdown helper
+    const countdownTimers = [];
+    function startCountdown(timestamp,el){
+      function tick(){
+        const now = Date.now();
+        const diff = timestamp - now;
+        if(diff<=0){el.textContent='Ended';return}
+        const h = Math.floor(diff/3600000);
+        const m = Math.floor((diff%3600000)/60000);
+        const s = Math.floor((diff%60000)/1000);
+        el.textContent = `${h}h ${m}m ${s}s`;
+        requestAnimationFrame(tick);
+      }
+      tick();
+    }
+
+    // date parser: simple YYYY-MM-DD HH:MM
+    function parseDateTimeLocal(s){
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/);
+      if(!m) return null;
+      const [_,Y,Mo,D,H,Min] = m.map(Number);
+      const dt = new Date(Y,Mo-1,D,H,Min);
+      if(isNaN(dt)) return null; return dt;
+    }
+
+    // clear all
+    clearBtn.addEventListener('click',()=>{
+      if(!confirm('Clear all data (voters, leaders, teams, polls, votes) from local storage?')) return;
+      localStorage.clear(); DB.voters=[];DB.leaders=[];DB.teams=[];DB.polls=[];DB.votes=[];saveDB();log('All data cleared'); location.reload();
+    });
+
+    // auto transition polls from scheduled->active when time hits
+    // (already handled in setInterval checkPolls)
+
+    // On load, rebuild team poll associations if missing
+    (function init(){
+      // if teams exist with null pollId but there is exactly one poll, attach them
+      saveDB();
+      log('App ready (client-only).');
+    })();
+
+    // UI shortcut: when clicking leader tab, prefill example format
+    tabLeader.addEventListener('click',()=>{ setTimeout(()=>{document.getElementById('poll-start')?.placeholder && (document.getElementById('poll-start').placeholder='2025-12-04 15:30')},100)});
+  </script>
+</body>
+</html>
